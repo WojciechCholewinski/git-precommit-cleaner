@@ -1,0 +1,53 @@
+#!/bin/bash
+
+# Ścieżka do pliku, w którym chcemy usunąć fragment
+FILE="docs/index.html"
+
+# Sprawdzenie, czy plik istnieje
+if [[ -f "$FILE" ]]; then
+    # Usuwanie całych bloków "content" zawierających "ProblemDetails"
+    awk '
+    BEGIN { inside_block = 0; brace_count = 0; }
+    /"content": {/ { 
+        inside_block = 1; 
+        brace_count = 1; 
+        block_buffer = $0; 
+        next; 
+    }
+    inside_block { 
+        block_buffer = block_buffer "\n" $0; 
+        brace_count += gsub(/}/, "}");  # Zliczanie zamknięć klamr
+        if (brace_count == 8) { 
+            if (block_buffer ~ /\$ref": "#\/components\/schemas\/ProblemDetails"/) {
+                inside_block = 0; 
+                block_buffer = ""; 
+                brace_count = 0;
+            } else {
+                print block_buffer;
+                inside_block = 0;
+                block_buffer = "";
+                brace_count = 0;
+            }
+        }
+        next;
+    }
+    !inside_block { print $0; }
+    ' "$FILE" > temp && mv temp "$FILE"
+
+    echo "Usunięto fragmenty schematów Swaggera zawierających ProblemDetails z $FILE."
+
+    # Dodanie zmodyfikowanego pliku do staged area
+    git add "$FILE"
+else
+    echo "Plik $FILE nie istnieje. Pomijanie."
+    exit 1
+fi
+
+# Jeśli doszło do problemu z awk lub git add, przerwij commit
+if [[ $? -ne 0 ]]; then
+    echo "Błąd w hooku pre-commit. Commit zatrzymany."
+    exit 1
+fi
+
+# Jeśli wszystko poszło dobrze, kontynuuj commit
+exit 0
